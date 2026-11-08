@@ -1,0 +1,314 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+
+local farmEnabled = false
+local antiIdleEnabled = false
+local platform
+local farmPosition = Vector3.new(0, -300, 0)
+local selectedColor = "Pink"
+
+local colors = {
+    Pink = Color3.fromRGB(255, 80, 180),
+    Blue = Color3.fromRGB(0, 150, 255),
+    Red = Color3.fromRGB(255, 65, 65),
+    Green = Color3.fromRGB(50, 230, 110)
+}
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "AutoFarmGUI"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(210, 235)
+frame.Position = UDim2.new(0, 20, 0, 100)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+frame.Parent = gui
+
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+
+-- DRAGGING
+local dragging = false
+local dragStart
+local startPosition
+
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        dragging = true
+        dragStart = input.Position
+        startPosition = frame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (
+        input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch
+    ) then
+
+        local delta = input.Position - dragStart
+
+        frame.Position = UDim2.new(
+            startPosition.X.Scale,
+            startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale,
+            startPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        dragging = false
+    end
+end)
+
+-- FARM BUTTON
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(1, -20, 0, 40)
+button.Position = UDim2.fromOffset(10, 10)
+button.Text = "Farm: OFF"
+button.TextSize = 17
+button.TextColor3 = Color3.new(1, 1, 1)
+button.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+button.Parent = frame
+
+Instance.new("UICorner", button).CornerRadius = UDim.new(0, 8)
+
+-- ANTI IDLE BUTTON
+local antiIdleButton = Instance.new("TextButton")
+antiIdleButton.Size = UDim2.new(1, -20, 0, 35)
+antiIdleButton.Position = UDim2.fromOffset(10, 185)
+antiIdleButton.Text = "Anti Idle: OFF"
+antiIdleButton.TextSize = 15
+antiIdleButton.TextColor3 = Color3.new(1, 1, 1)
+antiIdleButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+antiIdleButton.Parent = frame
+
+Instance.new("UICorner", antiIdleButton).CornerRadius = UDim.new(0, 8)
+
+antiIdleButton.Activated:Connect(function()
+    antiIdleEnabled = not antiIdleEnabled
+
+    if antiIdleEnabled then
+        antiIdleButton.Text = "Anti Idle: ON"
+        antiIdleButton.BackgroundColor3 = Color3.fromRGB(30, 170, 70)
+    else
+        antiIdleButton.Text = "Anti Idle: OFF"
+        antiIdleButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+    end
+end)
+
+-- COLOR BUTTONS
+local function makeColorButton(name, position)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.fromOffset(85, 35)
+    b.Position = position
+    b.Text = name
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.BackgroundColor3 = colors[name]
+    b.Parent = frame
+
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+
+    b.Activated:Connect(function()
+        selectedColor = name
+
+        if platform then
+            platform.Color = colors[name]
+        end
+    end)
+end
+
+makeColorButton("Pink", UDim2.fromOffset(10, 65))
+makeColorButton("Blue", UDim2.fromOffset(115, 65))
+makeColorButton("Red", UDim2.fromOffset(10, 110))
+makeColorButton("Green", UDim2.fromOffset(115, 110))
+
+-- CHARACTER
+local function getCharacter()
+    local character = player.Character
+    if not character then return end
+
+    local root = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+    if root and humanoid and humanoid.Health > 0 then
+        return character, root, humanoid
+    end
+end
+
+-- PLATFORM
+local function createPlatform()
+    if platform then
+        platform:Destroy()
+    end
+
+    local character, root = getCharacter()
+
+    local characterSize = Vector3.new(5, 5, 5)
+
+    if character then
+        characterSize = character:GetExtentsSize()
+    end
+
+    platform = Instance.new("Part")
+    platform.Name = "FarmPlatform"
+
+    -- MATCH AVATAR SIZE
+    platform.Size = Vector3.new(
+        characterSize.X + 2,
+        1,
+        characterSize.Z + 2
+    )
+
+    platform.Position = Vector3.new(
+        root and root.Position.X or farmPosition.X,
+        farmPosition.Y,
+        root and root.Position.Z or farmPosition.Z
+    )
+
+    platform.Anchored = true
+    platform.CanCollide = true
+    platform.Material = Enum.Material.Neon
+    platform.Transparency = 0.1
+    platform.Color = colors[selectedColor]
+    platform.Parent = workspace
+
+    -- OUTLINE
+    local selection = Instance.new("SelectionBox")
+    selection.Adornee = platform
+    selection.Color3 = colors[selectedColor]
+    selection.LineThickness = 0.05
+    selection.SurfaceTransparency = 1
+    selection.Parent = platform
+
+    -- COLOR ANIMATION
+    task.spawn(function()
+        while farmEnabled and platform and platform.Parent do
+            local tween = TweenService:Create(
+                platform,
+                TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                {Color = colors[selectedColor]}
+            )
+
+            tween:Play()
+            tween.Completed:Wait()
+
+            if not farmEnabled or not platform or not platform.Parent then
+                break
+            end
+
+            local brighter = colors[selectedColor]:Lerp(
+                Color3.new(1, 1, 1), 0.25
+            )
+
+            local tween2 = TweenService:Create(
+                platform,
+                TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                {Color = brighter}
+            )
+
+            tween2:Play()
+            tween2.Completed:Wait()
+        end
+    end)
+end
+
+-- START FARM
+local function startFarm()
+    farmEnabled = true
+    createPlatform()
+
+    button.Text = "Farm: ON"
+    button.BackgroundColor3 = Color3.fromRGB(30, 170, 70)
+
+    local _, root = getCharacter()
+
+    if root then
+        root.CFrame = CFrame.new(
+            platform.Position + Vector3.new(0, 5, 0)
+        )
+    end
+end
+
+-- STOP FARM
+local function stopFarm()
+    farmEnabled = false
+
+    button.Text = "Farm: OFF"
+    button.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+
+    if platform then
+        platform:Destroy()
+        platform = nil
+    end
+end
+
+button.Activated:Connect(function()
+    if farmEnabled then
+        stopFarm()
+    else
+        startFarm()
+    end
+end)
+
+-- RESPAWN
+player.CharacterAdded:Connect(function()
+    task.wait(1)
+
+    if farmEnabled then
+        createPlatform()
+
+        local _, root = getCharacter()
+
+        if root then
+            root.CFrame = CFrame.new(
+                platform.Position + Vector3.new(0, 5, 0)
+            )
+        end
+    end
+end)
+
+-- FOLLOWING PLATFORM
+RunService.Heartbeat:Connect(function()
+    if not farmEnabled or not platform or not platform.Parent then
+        return
+    end
+
+    local _, root = getCharacter()
+    if not root then return end
+
+    -- FOLLOW PLAYER
+    platform.Position = Vector3.new(
+        root.Position.X,
+        farmPosition.Y,
+        root.Position.Z
+    )
+
+    local localPosition = platform.CFrame:PointToObjectSpace(root.Position)
+    local halfSize = platform.Size / 2
+
+    local outside =
+        math.abs(localPosition.X) > halfSize.X or
+        math.abs(localPosition.Z) > halfSize.Z or
+        localPosition.Y < -10 or
+        localPosition.Y > 30
+
+    if outside then
+        root.CFrame = CFrame.new(
+            platform.Position + Vector3.new(0, 5, 0)
+        )
+
+        root.AssemblyLinearVelocity = Vector3.zero
+    end
+end)
